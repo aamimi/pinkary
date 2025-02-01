@@ -21,7 +21,7 @@ final readonly class UpdateQuestionHashtags
     }
 
     /**
-     * @return array{attached: array<int, int>, detached: array<int, int>, updated: array<int, int>}
+     * @return array{attached: array<array-key, mixed>, detached: array<array-key, mixed>, updated: array<array-key, mixed>}
      */
     public function handle(): array
     {
@@ -29,7 +29,7 @@ final readonly class UpdateQuestionHashtags
 
         $existingHashtags = Hashtag::query()->whereIn('name', $parsedHashtags->all())->get();
 
-        $newHashtags = $parsedHashtags->diff($existingHashtags->pluck('name'))
+        $newHashtags = $parsedHashtags->diff($existingHashtags->pluck('name')) // @phpstan-ignore-line
             ->map(fn (string $name): Hashtag => Hashtag::query()->create(['name' => $name]));
 
         return $this->question->hashtags()->sync($existingHashtags->merge($newHashtags));
@@ -44,16 +44,18 @@ final readonly class UpdateQuestionHashtags
     {
         $matches = [];
 
+        // When searching here, the hashtags will already be rendered as
+        // an <a> element, so we can specifically search for that.
         preg_match_all(
-            '/(<(a|code|pre)\s+[^>]*>.*?<\/\2>)|(?<!&)#([a-z0-9]+)/is',
+            '~<a\s+[^>]*href="/hashtag/([a-z0-9]+)"[^>]*>#\1</a>~i',
             "{$this->question->answer} {$this->question->content}",
             $matches,
         );
 
-        return collect($matches[3] ?? []) // @phpstan-ignore-line
+        return collect($matches[1] ?? []) // @phpstan-ignore-line
             ->filter()
             ->unique()
             ->values()
-            ->map(fn (string $hashtag): string => Str::limit($hashtag, 50, ''));
+            ->map(fn (string $hashtag): string => Str::limit($hashtag, 200, ''));
     }
 }

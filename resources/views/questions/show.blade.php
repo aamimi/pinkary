@@ -16,30 +16,22 @@
                     }
                  }"
                 x-on:click.prevent="back()"
-                class="flex text-slate-400 hover:underline cursor-pointer"
+                class="flex dark:text-slate-400 text-slate-500 hover:underline cursor-pointer"
             >
                 <x-icons.chevron-left class="h-6 w-6" />
                 <span>Back</span>
             </a>
 
-            @php
-                $parentQuestion = $question->parent;
+            <div>
+                @foreach($parentQuestions as $parentQuestion)
+                    <livewire:questions.show :questionId="$parentQuestion->id" :in-thread="true" :key="$parentQuestion->id" />
+                    <x-post-divider />
+                @endforeach
 
-                do {
-                    $parentQuestions[] = $parentQuestion;
-                } while ($parentQuestion = $parentQuestion?->parent);
-            @endphp
+                <livewire:questions.show :questionId="$question->id" :in-thread="true" :commenting="true" />
 
-            @php $parentQuestions = collect($parentQuestions)->filter()->reverse(); @endphp
-
-            @foreach($parentQuestions as $parentQuestion)
-                <livewire:questions.show :questionId="$parentQuestion->id" :in-thread="false" />
-                <div class="relative -mt-11 -mb-14 h-6">
-                    <span class="absolute left-8 h-full w-1.5 rounded-full bg-slate-700" aria-hidden="true"></span>
-                </div>
-            @endforeach
-
-            <livewire:questions.show :questionId="$question->id" :in-thread="true" :commenting="true" />
+                <x-comments :question="$question" />
+            </div>
         </div>
     </div>
 </x-app-layout>

@@ -4,17 +4,21 @@ declare(strict_types=1);
 
 namespace App\Livewire\Questions;
 
+use App\Livewire\Concerns\NeedsVerifiedEmail;
 use App\Models\Question;
 use App\Models\User;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\View\View;
 use Livewire\Attributes\Locked;
 use Livewire\Attributes\On;
+use Livewire\Attributes\Renderless;
 use Livewire\Attributes\Url;
 use Livewire\Component;
 
 final class Show extends Component
 {
+    use NeedsVerifiedEmail;
+
     /**
      * The component's question ID.
      */
@@ -95,6 +99,10 @@ final class Show extends Component
             return;
         }
 
+        if ($this->doesNotHaveVerifiedEmail()) {
+            return;
+        }
+
         if ($this->inIndex) {
             $this->dispatch('notification.created', message: 'Question ignored.');
 
@@ -115,11 +123,16 @@ final class Show extends Component
     /**
      * Bookmark the question.
      */
+    #[Renderless]
     public function bookmark(): void
     {
         if (! auth()->check()) {
             $this->redirectRoute('login', navigate: true);
 
+            return;
+        }
+
+        if ($this->doesNotHaveVerifiedEmail()) {
             return;
         }
 
@@ -137,11 +150,16 @@ final class Show extends Component
     /**
      * Like the question.
      */
+    #[Renderless]
     public function like(): void
     {
         if (! auth()->check()) {
             $this->redirectRoute('login', navigate: true);
 
+            return;
+        }
+
+        if ($this->doesNotHaveVerifiedEmail()) {
             return;
         }
 
@@ -160,6 +178,10 @@ final class Show extends Component
         if (! auth()->check()) {
             $this->redirectRoute('login', navigate: true);
 
+            return;
+        }
+
+        if ($this->doesNotHaveVerifiedEmail()) {
             return;
         }
 
@@ -186,6 +208,10 @@ final class Show extends Component
             return;
         }
 
+        if ($this->doesNotHaveVerifiedEmail()) {
+            return;
+        }
+
         $question = Question::findOrFail($this->questionId);
 
         $this->authorize('update', $question);
@@ -198,11 +224,16 @@ final class Show extends Component
     /**
      * Unbookmark the question.
      */
+    #[Renderless]
     public function unbookmark(): void
     {
         if (! auth()->check()) {
             $this->redirectRoute('login', navigate: true);
 
+            return;
+        }
+
+        if ($this->doesNotHaveVerifiedEmail()) {
             return;
         }
 
@@ -222,11 +253,16 @@ final class Show extends Component
     /**
      * Unlike the question.
      */
+    #[Renderless]
     public function unlike(): void
     {
         if (! auth()->check()) {
             $this->redirectRoute('login', navigate: true);
 
+            return;
+        }
+
+        if ($this->doesNotHaveVerifiedEmail()) {
             return;
         }
 
@@ -261,9 +297,6 @@ final class Show extends Component
             }])
             ->when(! $this->inThread || $this->commenting, function (Builder $query): void {
                 $query->with('parent');
-            })
-            ->when($this->inThread, function (Builder $query): void {
-                $query->with(['children']);
             })
             ->withCount(['likes', 'children', 'bookmarks'])
             ->firstOrFail();

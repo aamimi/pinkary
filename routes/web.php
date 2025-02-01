@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Http\Controllers\BookmarksController;
 use App\Http\Controllers\ChangelogController;
+use App\Http\Controllers\HashtagController;
 use App\Http\Controllers\NotificationController;
 use App\Http\Controllers\QrCodeController;
 use App\Http\Controllers\QuestionController;
@@ -18,14 +19,19 @@ use Illuminate\Support\Facades\Route;
 Route::view('/about', 'about')->name('about');
 
 Route::view('/', 'home/feed')->name('home.feed');
-Route::view('/for-you', 'home/questions-for-you')->name('home.for_you');
+Route::redirect('/for-you', '/following')->name('home.for_you');
+Route::view('/following', 'home/following')->name('home.following');
 Route::view('/trending', 'home/trending-questions')->name('home.trending');
 Route::view('/users', 'home/users')->name('home.users');
+
+Route::get('/hashtag/{hashtag}', HashtagController::class)->name('hashtag.show');
 
 Route::view('/terms', 'terms')->name('terms');
 Route::view('/privacy', 'privacy')->name('privacy');
 Route::view('/support', 'support')->name('support');
 Route::view('/brand/resources', 'brand.resources')->name('brand.resources');
+
+Route::view('/verified', 'verified')->name('verified');
 
 Route::redirect('/sponsors', 'https://github.com/sponsors/nunomaduro/')->name('sponsors');
 

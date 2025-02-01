@@ -1,11 +1,7 @@
 <x-guest-layout>
     @section('head')
-        <script
-            async
-            src="https://www.google.com/recaptcha/api.js"
-        ></script>
+        @turnstileScripts()
     @endsection
-
     <form
         method="POST"
         action="{{ route('register') }}"
@@ -117,6 +113,13 @@
         </div>
 
         <div class="mt-4">
+
+            @if (App::environment(['production', 'testing']))
+                <div class="flex justify-center mt-4">
+                    <x-turnstile data-theme="auto"/>
+                </div>
+            @endif
+
             <div class="flex items-center">
                 <input
                     id="terms"
@@ -135,6 +138,7 @@
                     >
                     and
                     <a
+                        target="_blank"
                         href="{{ route('privacy') }}"
                         class="text-pink-500 underline hover:no-underline"
                         >Privacy Policy</a
@@ -148,13 +152,7 @@
             />
         </div>
 
-        <div
-            class="g-recaptcha mt-4"
-            data-sitekey="{{ config('services.recaptcha.key') }}"
-            data-theme="dark"
-        ></div>
-
-        @if ($errors->has('g-recaptcha-response'))
+    @if ($errors->has('cf-turnstile-response'))
             <x-input-error
                 :messages="'The reCAPTCHA is required.'"
                 class="mt-2"
@@ -166,7 +164,7 @@
                 <span class="text-slate-500">Already have an account?</span>
 
                 <a
-                    class="rounded-md text-sm text-slate-200 underline hover:no-underline focus:outline-none focus:ring-2 focus:ring-slate-500 focus:ring-offset-2"
+                    class="rounded-md text-sm dark:text-slate-200 text-slate-800 underline hover:no-underline focus:outline-none focus:ring-2 focus:ring-slate-500 focus:ring-offset-2"
                     href="{{ route('login') }}"
                     wire:navigate
                 >

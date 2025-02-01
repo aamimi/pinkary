@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Livewire\Questions\Create;
 use App\Models\User;
 use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\Storage;
 use Intervention\Image\ImageManager;
 use Livewire\Features\SupportTesting\Testable;
 use Livewire\Livewire;
@@ -66,7 +67,9 @@ test('store', function () {
     expect($question->from_id)->toBe($userA->id)
         ->and($question->to_id)->toBe($userB->id)
         ->and($question->content)->toBe('Hello World')
-        ->and($question->anonymously)->toBeTrue();
+        ->and($question->anonymously)->toBeTrue()
+        ->and($question->parent_id)->toBeNull()
+        ->and($question->root_id)->toBeNull();
 });
 
 test('store auth', function () {
@@ -130,7 +133,6 @@ test('store rate limit', function () {
 
 test('store comment', function () {
     $userA = User::factory()->create();
-    $userB = User::factory()->create();
 
     $question = App\Models\Question::factory()->create();
 
@@ -140,7 +142,42 @@ test('store comment', function () {
         'parentId' => $question->id,
     ]);
 
-    sleep(1);
+    $this->travel(1)->seconds(); // To avoid time conflicts
+    $component->set('content', 'My comment');
+
+    $component->call('store');
+    $component->assertSet('content', '');
+
+    $component->assertDispatched('notification.created', message: 'Comment sent.');
+    $component->assertDispatched('question.created');
+
+    $comment = App\Models\Question::latest()->limit(1)->first();
+
+    expect($comment->from_id)->toBe($userA->id)
+        ->and($comment->to_id)->toBe($userA->id)
+        ->and($comment->answer)->toBe('My comment')
+        ->and($comment->parent_id)->toBe($question->id)
+        ->and($comment->root_id)->toBe($question->id);
+});
+
+test('store comment on a comment', function () {
+    $userA = User::factory()->create();
+
+    $question = App\Models\Question::factory()->create();
+
+    $questionWithComment = App\Models\Question::factory()->create([
+        'to_id' => $userA->id,
+        'parent_id' => $question->id,
+        'root_id' => $question->id,
+    ]);
+
+    /** @var Testable $component */
+    $component = Livewire::actingAs($userA)->test(Create::class, [
+        'toId' => $userA->id,
+        'parentId' => $questionWithComment->id,
+    ]);
+
+    $this->travel(1)->seconds(); // To avoid time conflicts
 
     $component->set('content', 'My comment');
 
@@ -155,7 +192,9 @@ test('store comment', function () {
     expect($comment->from_id)->toBe($userA->id)
         ->and($comment->to_id)->toBe($userA->id)
         ->and($comment->answer)->toBe('My comment')
-        ->and($comment->parent_id)->toBe($question->id);
+        ->and($comment->parent_id)->toBe($questionWithComment->id)
+        ->and($comment->root_id)->toBe($questionWithComment->root_id)
+        ->and($comment->root_id)->toBe($question->id);
 });
 
 test('max 30 questions per day', function () {
@@ -371,7 +410,10 @@ test('updated method invokes handleUploads', function () {
     $component = Livewire::actingAs($user)->test(Create::class);
 
     $component->set('images', [$file]);
-    $component->invade()->updated('images');
+
+    $method = new ReflectionMethod(Create::class, 'uploadImages');
+    $method->setAccessible(true);
+    $method->invoke($component->instance());
 
     expect(session('images'))->toBeArray()
         ->and(session('images'))->toContain($path);
@@ -392,7 +434,10 @@ test('unused image cleanup when store is called', function () {
         'toId' => $user->id,
     ]);
     $component->set('images', [$file]);
-    $component->call('uploadImages');
+
+    $method = new ReflectionMethod(Create::class, 'uploadImages');
+    $method->setAccessible(true);
+    $method->invoke($component->instance());
 
     Storage::disk('public')->assertExists($path);
 
@@ -445,12 +490,14 @@ test('delete image', function () {
 
     Storage::disk('public')->assertExists($path);
 
-    $component->call('deleteImage', $path);
+    $method = new ReflectionMethod(Create::class, 'deleteImage');
+    $method->setAccessible(true);
+    $method->invoke($component->instance(), $path);
 
     $pathAgain = $file->store('images', 'public');
     Storage::disk('public')->assertExists($pathAgain);
 
-    $component->call('deleteImage', $pathAgain);
+    $method->invoke($component->instance(), $pathAgain);
 
     Storage::disk('public')->assertMissing($pathAgain);
 });
@@ -466,7 +513,9 @@ test('optimizeImage method resizes and saves the image', function () {
         'toId' => $user->id,
     ]);
 
-    $component->call('optimizeImage', $path);
+    $method = new ReflectionMethod(Create::class, 'optimizeImage');
+    $method->setAccessible(true);
+    $method->invoke($component->instance(), $path);
 
     Storage::disk('public')->assertExists($path);
 
@@ -482,6 +531,64 @@ test('optimizeImage method resizes and saves the image', function () {
 
     expect($image->width())->toBeLessThanOrEqual(1000)
         ->and($image->height())->toBeLessThanOrEqual(1000);
+});
+
+test('optimizeImage method resizes and saves image with multiple frames', function () {
+    Storage::fake('public');
+
+    $user = User::factory()->create();
+
+    $gif = new Imagick();
+
+    $gif->setFormat('gif');
+
+    for ($i = 0; $i < 3; $i++) {
+        $frame = new Imagick();
+
+        $frame->newImage(1200, 1200, new ImagickPixel(match ($i) {
+            0 => 'red',
+            1 => 'green',
+            2 => 'blue',
+        }));
+
+        $frame->setImageFormat('gif');
+
+        $gif->addImage($frame);
+    }
+
+    $testImage = UploadedFile::fake()->createWithContent('test.gif', $gif->getImagesBlob());
+
+    $path = $testImage->store('images', 'public');
+
+    $component = Livewire::actingAs($user)->test(Create::class, [
+        'toId' => $user->id,
+    ]);
+
+    $method = new ReflectionMethod(Create::class, 'optimizeImage');
+    $method->setAccessible(true);
+    $method->invoke($component->instance(), $path);
+
+    Storage::disk('public')->assertExists($path);
+
+    $optimizedImagePath = Storage::disk('public')->path($path);
+
+    $originalImageSize = filesize($testImage->getPathname());
+    $optimizedImageSize = filesize($optimizedImagePath);
+
+    expect($optimizedImageSize)->toBeLessThan($originalImageSize);
+
+    $optimizedImage = new Imagick($optimizedImagePath);
+
+    expect($optimizedImage->getImageWidth())->toBeLessThanOrEqual(1000)
+        ->and($optimizedImage->getImageHeight())->toBeLessThanOrEqual(1000)
+        ->and($optimizedImage->getNumberImages())->toBe(3);
+
+    $frames = $optimizedImage->coalesceImages();
+
+    foreach ($frames as $frame) {
+        expect($frame->getImageWidth())->toBeLessThanOrEqual(1000)
+            ->and($frame->getImageHeight())->toBeLessThanOrEqual(1000);
+    }
 });
 
 test('maxFileSize and maxImages', function () {
@@ -503,7 +610,10 @@ test('non verified users can upload images', function () {
     ]);
 
     $component->set('images', [UploadedFile::fake()->image('test.jpg')]);
-    $component->call('uploadImages');
+
+    $method = new ReflectionMethod(Create::class, 'uploadImages');
+    $method->setAccessible(true);
+    $method->invoke($component->instance());
 
     $component->assertHasNoErrors();
 });
@@ -518,7 +628,10 @@ test('company verified users can upload images', function () {
     ]);
 
     $component->set('images', [UploadedFile::fake()->image('test.jpg')]);
-    $component->call('uploadImages');
+
+    $method = new ReflectionMethod(Create::class, 'uploadImages');
+    $method->setAccessible(true);
+    $method->invoke($component->instance());
 
     $component->assertHasNoErrors();
 });
@@ -628,4 +741,30 @@ test('max size & ratio validation', function () {
     $component->assertHasErrors([
         'images.0' => 'The image aspect ratio must be less than 2/5.',
     ]);
+});
+
+test('only verified users can upload images', function () {
+    $user = User::factory()->unverified()->create();
+
+    $component = Livewire::actingAs($user)->test(Create::class, [
+        'toId' => $user->id,
+    ]);
+
+    $component->set('images', [UploadedFile::fake()->image('test.jpg')]);
+    $component->call('runImageValidation');
+
+    $component->assertRedirect(route('verification.notice'));
+});
+
+test('only verified users can create questions', function () {
+    $user = User::factory()->unverified()->create();
+
+    $component = Livewire::actingAs($user)->test(Create::class, [
+        'toId' => $user->id,
+    ]);
+
+    $component->set('content', 'Hello World');
+    $component->call('store');
+
+    $component->assertRedirect(route('verification.notice'));
 });

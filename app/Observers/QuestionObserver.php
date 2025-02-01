@@ -40,6 +40,8 @@ final readonly class QuestionObserver
      */
     public function updated(Question $question): void
     {
+        $question->loadMissing('from', 'to');
+
         if ($question->is_ignored || $question->is_reported) {
             $this->deleted($question);
 
@@ -78,7 +80,11 @@ final readonly class QuestionObserver
             $user->notifications()->whereJsonContains('data->question_id', $question->id)->delete();
         });
 
+        $question->loadMissing(['children', 'descendants']);
+
         $question->children->each->delete();
+
+        $question->descendants->each->delete();
 
         $question->hashtags()->detach();
     }

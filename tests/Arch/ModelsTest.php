@@ -29,7 +29,7 @@ arch('models')
     ])->ignoring('App\Models\Concerns');
 
 arch('ensure factories', function () {
-    expect($models = getModels())->toHaveCount(6);
+    expect($models = getModels())->toHaveCount(7);
 
     foreach ($models as $model) {
         /* @var \Illuminate\Database\Eloquent\Factories\HasFactory $model */
@@ -39,17 +39,26 @@ arch('ensure factories', function () {
 });
 
 arch('ensure datetime casts', function () {
-    expect($models = getModels())->toHaveCount(6);
+    expect($models = getModels())->toHaveCount(7);
 
     foreach ($models as $model) {
         /* @var \Illuminate\Database\Eloquent\Factories\HasFactory $model */
         $instance = $model::factory()->create();
 
         $dates = collect($instance->getAttributes())
-            ->filter(fn ($_, $key) => str_ends_with($key, '_at'));
+            ->filter(fn ($_, $key) => str_ends_with($key, '_at'))
+            ->reject(fn ($_, $key) => in_array($key, ['created_at', 'updated_at']));
 
         foreach ($dates as $key => $value) {
-            expect($instance->getCasts())->toHaveKey($key, 'datetime');
+            expect($instance->getCasts())->toHaveKey(
+                $key,
+                'datetime',
+                sprintf(
+                    'The %s cast on the %s model is not a datetime cast.',
+                    $key,
+                    $model,
+                ),
+            );
         }
     }
 });
@@ -57,7 +66,7 @@ arch('ensure datetime casts', function () {
 /**
  * Get all models in the app/Models directory.
  *
- * @return array<int, class-string<\Illuminate\Database\Eloquent\Model>>
+ * @return array<int, class-string<Illuminate\Database\Eloquent\Model>>
  */
 function getModels(): array
 {

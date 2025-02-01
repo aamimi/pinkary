@@ -4,6 +4,12 @@ declare(strict_types=1);
 
 use Illuminate\Http\UploadedFile;
 
+beforeEach(function () {
+    Http::fake([
+        '*' => Http::response('', 404),
+    ]);
+});
+
 test('brs', function (string $content, string $parsed) {
     $provider = new App\Services\ParsableContentProviders\BrProviderParsable();
 
@@ -24,6 +30,10 @@ test('links', function (string $content, string $parsed) {
 
     expect($provider->parse($content))->toBe($parsed);
 })->with([
+    [
+        'content' => 'http://example.com/',
+        'parsed' => '<a data-navigate-ignore="true" class="text-blue-500 hover:underline hover:text-blue-700 cursor-pointer" target="_blank" href="http://example.com/">example.com</a>',
+    ],
     [
         'content' => 'https://example.com/',
         'parsed' => '<a data-navigate-ignore="true" class="text-blue-500 hover:underline hover:text-blue-700 cursor-pointer" target="_blank" href="https://example.com/">example.com</a>',
@@ -190,6 +200,48 @@ test('links within <pre> and <code> blocks are ignored', function (string $conte
     ],
 ]);
 
+test('malformed links are correctly handled by content parser', function (string $content) {
+    $provider = new App\Services\ParsableContentProviders\LinkProviderParsable();
+    expect($provider->parse($content))->toMatchSnapshot();
+})->with([
+    'http://example..com',
+    'htt://example.com',
+    'protocol://example.com',
+    'http//example.com',
+    'http://exa_mple.com',
+    'http://example',
+    'http://.example.com',
+    'http://example=com',
+    'www.example.com',
+    'http:/example.com',
+    'http:///example.com',
+    'http://example.com?this<>=that',
+    'http://example.com?this=that#this<>=that',
+    'http://[2001:0db8:85a3:0000:0000:8a2e:0370:7334]',
+    'http://[2001:0db8:85a3:0000:0000:8a2e:0370:7334]:8080',
+    'http://example.com:abcd',
+    'http://example.com/👍',
+]);
+
+test('only http or https urls are converted to links', function (string $content, string $parsed) {
+    $provider = new App\Services\ParsableContentProviders\LinkProviderParsable();
+
+    expect($provider->parse($content))->toBe($parsed);
+})->with([
+    [
+        'content' => 'example.com will not be a link but https://example.com will',
+        'parsed' => 'example.com will not be a link but <a data-navigate-ignore="true" class="text-blue-500 hover:underline hover:text-blue-700 cursor-pointer" target="_blank" href="https://example.com">example.com</a> will',
+    ],
+    [
+        'content' => 'www.example.com',
+        'parsed' => 'www.example.com',
+    ],
+    [
+        'content' => 'blade.php',
+        'parsed' => 'blade.php',
+    ],
+]);
+
 test('mentions within <pre> and <code> blocks are ignored', function (string $content, string $parsed) {
     $provider = new App\Services\ParsableContentProviders\MentionProviderParsable();
 
@@ -244,6 +296,19 @@ test('code', function (string $content) {
             ```
             EOL,
     ],
+    /*
+        The below example tests that the code block is still parsed correctly even if there
+        is a space after the language. Sonarlint flags up a 'useless space' error
+        so we need to use a str_replace to add a space after the language programatically.
+    */
+    [
+        'content' => str_replace('```php', '```php ', <<<'EOL'
+            ```php
+            echo "Hello, World!";
+            ```
+            EOL
+        ),
+    ],
 ]);
 
 test('mention', function (string $content) {
@@ -295,43 +360,43 @@ test('hashtags', function (string $content, string $parsed) {
 })->with([
     [
         'content' => 'This is a #hashtag',
-        'parsed' => 'This is a <span class="text-blue-500">#hashtag</span>',
+        'parsed' => 'This is a <a class="text-blue-500 hover:underline hover:text-blue-700 cursor-pointer" href="/hashtag/hashtag">#hashtag</a>',
     ],
     [
         'content' => '#hashtag at the beginning',
-        'parsed' => '<span class="text-blue-500">#hashtag</span> at the beginning',
+        'parsed' => '<a class="text-blue-500 hover:underline hover:text-blue-700 cursor-pointer" href="/hashtag/hashtag">#hashtag</a> at the beginning',
     ],
     [
         'content' => '#ab12z9_-',
-        'parsed' => '<span class="text-blue-500">#ab12z9</span>_-',
+        'parsed' => '<a class="text-blue-500 hover:underline hover:text-blue-700 cursor-pointer" href="/hashtag/ab12z9">#ab12z9</a>_-',
     ],
     [
         'content' => '#hashtag.',
-        'parsed' => '<span class="text-blue-500">#hashtag</span>.',
+        'parsed' => '<a class="text-blue-500 hover:underline hover:text-blue-700 cursor-pointer" href="/hashtag/hashtag">#hashtag</a>.',
     ],
     [
         'content' => '#hashtag,',
-        'parsed' => '<span class="text-blue-500">#hashtag</span>,',
+        'parsed' => '<a class="text-blue-500 hover:underline hover:text-blue-700 cursor-pointer" href="/hashtag/hashtag">#hashtag</a>,',
     ],
     [
         'content' => '#hashtag!',
-        'parsed' => '<span class="text-blue-500">#hashtag</span>!',
+        'parsed' => '<a class="text-blue-500 hover:underline hover:text-blue-700 cursor-pointer" href="/hashtag/hashtag">#hashtag</a>!',
     ],
     [
         'content' => '#hashtag?',
-        'parsed' => '<span class="text-blue-500">#hashtag</span>?',
+        'parsed' => '<a class="text-blue-500 hover:underline hover:text-blue-700 cursor-pointer" href="/hashtag/hashtag">#hashtag</a>?',
     ],
     [
         'content' => '#hashtag/',
-        'parsed' => '<span class="text-blue-500">#hashtag</span>/',
+        'parsed' => '<a class="text-blue-500 hover:underline hover:text-blue-700 cursor-pointer" href="/hashtag/hashtag">#hashtag</a>/',
     ],
     [
         'content' => '##hashtag#',
-        'parsed' => '#<span class="text-blue-500">#hashtag</span>#',
+        'parsed' => '#<a class="text-blue-500 hover:underline hover:text-blue-700 cursor-pointer" href="/hashtag/hashtag">#hashtag</a>#',
     ],
     [
         'content' => 'Existing <a href="/route#segment">link with #segment</a> and a #hashtag.',
-        'parsed' => 'Existing <a href="/route#segment">link with #segment</a> and a <span class="text-blue-500">#hashtag</span>.',
+        'parsed' => 'Existing <a href="/route#segment">link with #segment</a> and a <a class="text-blue-500 hover:underline hover:text-blue-700 cursor-pointer" href="/hashtag/hashtag">#hashtag</a>.',
     ],
     [
         'content' => 'It&#039;ll work with html escapes.',
@@ -347,10 +412,10 @@ test('hashtags', function (string $content, string $parsed) {
         multiline $codeBlocks = <span class="hljs-keyword">true</span>;
         #comment
         </code></pre>
-        <span class="text-blue-500">#hashtag</span>',
+        <a class="text-blue-500 hover:underline hover:text-blue-700 cursor-pointer" href="/hashtag/hashtag">#hashtag</a>',
     ],
     [
         'content' => '#extremelylonghashtagswillbeallowedaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
-        'parsed' => '<span class="text-blue-500">#extremelylonghashtagswillbeallowedaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa</span>',
+        'parsed' => '<a class="text-blue-500 hover:underline hover:text-blue-700 cursor-pointer" href="/hashtag/extremelylonghashtagswillbeallowedaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa">#extremelylonghashtagswillbeallowedaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa</a>',
     ],
 ]);

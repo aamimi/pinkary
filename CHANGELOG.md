@@ -1,3 +1,50 @@
+## Version 1.43.1
+> 11 October, 2024
+
+- Improves speed on following.
+- Adds threads on profile page.
+- Internal improvements and bug fixes.
+
+## Version 1.43.0
+> 30 September, 2024
+
+- Fixes pagination colors in light mode.
+- Fixes contrast in link settings.
+- Fixes image markdown counting for the max number of chars.
+- More speed improvements on feeds
+- Allow to follow on list of users.
+- Adds `?ref=pinkary` to all pinkary links.
+- Internal improvements and bug fixes.
+
+## Version 1.42.0
+> 18 September, 2024
+
+- Adds Light theme.
+- Adds iOS icon.
+- Improves posts view counts, making it more accurate.
+- Internal improvements and bug fixes.
+
+## Version 1.41.0
+> 8 September, 2024
+
+- Allows to ignore all notifications.
+- Internal improvements and bug fixes.
+
+## Version 1.40.0
+> 7 September, 2024
+
+- Adds Hashtags support.
+- Mobile improvements
+- Main "feed" improvements
+- Bookmarks count
+- Internal improvements and bug fixes.
+
+## Version 1.39.0
+> 1 September, 2024
+
+- Project got open-sourced at: [https://github.com/pinkary-project/pinkary.com](https://github.com/pinkary-project/pinkary.com)
+- Internal improvements and bug fixes.
+
 ## Version 1.38.0
 > 25 August, 2024
 

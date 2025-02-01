@@ -12,6 +12,8 @@ export default {
         "./resources/js/**/*.js",
     ],
 
+    darkMode: 'selector',
+
     theme: {
         extend: {
             fontFamily: {
@@ -19,6 +21,9 @@ export default {
             },
             screens: {
                 xsm: '467px',
+            },
+            maxWidth: {
+               'md': '30rem',
             },
         },
     },

@@ -20,6 +20,7 @@ use Illuminate\Support\Carbon;
 
 /**
  * @property string $id
+ * @property string|null $root_id
  * @property string|null $parent_id
  * @property int $from_id
  * @property int $to_id
@@ -40,6 +41,7 @@ use Illuminate\Support\Carbon;
  * @property-read Collection<int, User> $mentions
  * @property-read Question|null $parent
  * @property-read Collection<int, Question> $children
+ * @property-read Collection<int, Question> $descendants
  * @property-read Collection<int, Hashtag> $hashtags
  */
 #[ObservedBy(QuestionObserver::class)]
@@ -83,6 +85,44 @@ final class Question extends Model implements Viewable
 
     /**
      * The attributes that should be cast.
+     */
+    public function getSharableAnswerAttribute(): ?string
+    {
+        return $this->getSharableText($this->answer);
+    }
+
+    /**
+     * The attributes that should be cast.
+     */
+    public function getSharableContentAttribute(): ?string
+    {
+        return $this->getSharableText($this->content);
+    }
+
+    /**
+     * Get the sharable text for the given content.
+     */
+    public function getSharableText(?string $text): ?string
+    {
+        if ($text === null) {
+            return null;
+        }
+
+        $text = preg_replace('/<div\s+id="link-preview-card"[^>]*>(.*)<\/div>(?!.*<\/div>)/si', '', $text);
+
+        $text = preg_replace(
+            '/<pre><code.*?>.*?<\/code><\/pre>/si',
+            ' [👀 see the code on Pinkary 👀] ',
+            (string) $text
+        );
+
+        $text = str_replace('<br>', ' ', (string) $text);
+
+        return strip_tags($text);
+    }
+
+    /**
+     * The attributes that should be cast.
      *
      * @return array<string, string>
      */
@@ -95,7 +135,7 @@ final class Question extends Model implements Viewable
             'answer_updated_at' => 'datetime',
             'created_at' => 'datetime',
             'updated_at' => 'datetime',
-            'pinned' => 'bool',
+            'pinned' => 'boolean',
             'is_ignored' => 'boolean',
             'views' => 'integer',
         ];
@@ -104,7 +144,7 @@ final class Question extends Model implements Viewable
     /**
      * Get the user that the question was sent from.
      *
-     * @return BelongsTo<User, Question>
+     * @return BelongsTo<User, covariant $this>
      */
     public function from(): BelongsTo
     {
@@ -114,7 +154,7 @@ final class Question extends Model implements Viewable
     /**
      * Get the user that the question was sent to.
      *
-     * @return BelongsTo<User, Question>
+     * @return BelongsTo<User, covariant $this>
      */
     public function to(): BelongsTo
     {
@@ -124,7 +164,7 @@ final class Question extends Model implements Viewable
     /**
      * Get the bookmarks for the question.
      *
-     * @return HasMany<Bookmark>
+     * @return HasMany<Bookmark, covariant $this>
      */
     public function bookmarks(): HasMany
     {
@@ -134,7 +174,7 @@ final class Question extends Model implements Viewable
     /**
      * Get the likes for the question.
      *
-     * @return HasMany<Like>
+     * @return HasMany<Like, covariant $this>
      */
     public function likes(): HasMany
     {
@@ -156,7 +196,7 @@ final class Question extends Model implements Viewable
         }
 
         preg_match_all("/@([^\s,.?!\/@<]+)/i", type($this->content)->asString(), $contentMatches);
-        preg_match_all("/@([^\s,.?!\/@<]+)/i", type($this->answer)->asString(), $answerMatches);
+        preg_match_all("/@([^\s,.?!\/@<]+)/i", $this->answer, $answerMatches);
 
         $mentions = array_unique(array_merge($contentMatches[1], $answerMatches[1]));
 
@@ -172,15 +212,27 @@ final class Question extends Model implements Viewable
     }
 
     /**
-     * @return BelongsTo<Question, Question>
+     * @return BelongsTo<Question, covariant $this>
      */
-    public function parent(): BelongsTo
+    public function root(): BelongsTo
     {
-        return $this->belongsTo(self::class, 'parent_id');
+        return $this->belongsTo(self::class, 'root_id')
+            ->where('is_ignored', false)
+            ->where('is_reported', false);
     }
 
     /**
-     * @return HasMany<Question>
+     * @return BelongsTo<Question, covariant $this>
+     */
+    public function parent(): BelongsTo
+    {
+        return $this->belongsTo(self::class, 'parent_id')
+            ->where('is_ignored', false)
+            ->where('is_reported', false);
+    }
+
+    /**
+     * @return HasMany<Question, covariant $this>
      */
     public function children(): HasMany
     {
@@ -190,7 +242,17 @@ final class Question extends Model implements Viewable
     }
 
     /**
-     * @return BelongsToMany<Hashtag>
+     * @return HasMany<Question, covariant $this>
+     */
+    public function descendants(): HasMany
+    {
+        return $this->hasMany(self::class, 'root_id')
+            ->where('is_ignored', false)
+            ->where('is_reported', false);
+    }
+
+    /**
+     * @return BelongsToMany<Hashtag, covariant $this>
      */
     public function hashtags(): BelongsToMany
     {

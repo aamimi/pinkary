@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Livewire\Questions;
 
+use App\Livewire\Concerns\NeedsVerifiedEmail;
+use App\Models\Question;
 use App\Models\User;
 use App\Rules\MaxUploads;
 use App\Rules\NoBlankCharacters;
@@ -27,7 +29,13 @@ use Livewire\WithFileUploads;
  */
 final class Create extends Component
 {
+    use NeedsVerifiedEmail;
     use WithFileUploads;
+
+    /**
+     * The disk to store the images.
+     */
+    private const string IMAGE_DISK = 'public';
 
     /**
      * Max number of images allowed.
@@ -75,6 +83,10 @@ final class Create extends Component
      */
     public function updated(mixed $property): void
     {
+        if ($this->doesNotHaveVerifiedEmail()) {
+            return;
+        }
+
         if ($property === 'images') {
             $this->runImageValidation();
             $this->uploadImages();
@@ -86,6 +98,10 @@ final class Create extends Component
      */
     public function runImageValidation(): void
     {
+        if ($this->doesNotHaveVerifiedEmail()) {
+            return;
+        }
+
         $this->validate(
             rules: [
                 'images' => [
@@ -104,6 +120,7 @@ final class Create extends Component
                         /** @var UploadedFile $value */
                         $dimensions = $value->dimensions();
                         if (is_array($dimensions)) {
+                            /** @var array<int, int> $dimensions */
                             [$width, $height] = $dimensions;
                             $aspectRatio = $width / $height;
                             $maxAspectRatio = 2 / 5;
@@ -203,6 +220,10 @@ final class Create extends Component
             return;
         }
 
+        if ($this->doesNotHaveVerifiedEmail()) {
+            return;
+        }
+
         $user = type($request->user())->as(User::class);
 
         if (! app()->isLocal() && $user->questionsSent()->where('created_at', '>=', now()->subMinute())->count() >= 3) {
@@ -231,6 +252,7 @@ final class Create extends Component
 
         if (filled($this->parentId)) {
             $validated['parent_id'] = $this->parentId;
+            $validated['root_id'] = Question::whereKey($this->parentId)->value('root_id') ?? $this->parentId;
         }
 
         $user->questionsSent()->create([
@@ -253,18 +275,119 @@ final class Create extends Component
         };
 
         $this->dispatch('notification.created', message: $message);
+
+        if (filled($this->parentId)) {
+            $this->js(<<<'JS'
+                Livewire.navigate(window.location.href);
+            JS);
+        }
+    }
+
+    /**
+     * Render the component.
+     */
+    public function render(): View
+    {
+        $user = new User;
+
+        if (filled($this->toId)) {
+            $user = $user->findOrFail($this->toId);
+        }
+
+        return view('livewire.questions.create', [
+            'user' => $user,
+        ]);
+    }
+
+    /**
+     * Validate and delete the image if it meets criteria.
+     */
+    public function deleteImageAfterValidation(string $path): void
+    {
+        if (! $this->validateImagePath($path)) {
+            return;
+        }
+
+        $this->deleteImage($path);
+    }
+
+    /**
+     * Validate if the image path is eligible for deletion.
+     */
+    private function validateImagePath(string $path): bool
+    {
+        $images = $this->getSessionImages();
+
+        return in_array($path, $images, true) && $this->isValidImageFile($path);
+    }
+
+    /**
+     * Check if the path exists and is a valid image file.
+     */
+    private function isValidImageFile(string $path): bool
+    {
+        if (! Storage::disk(self::IMAGE_DISK)->exists($path)) {
+            return false;
+        }
+
+        $imageContent = Storage::disk(self::IMAGE_DISK)->get($path) ?: '';
+
+        return @getimagesizefromstring($imageContent) !== false;
+    }
+
+    /**
+     * Optimize the images.
+     */
+    private function optimizeImage(string $path): void
+    {
+        $imagePath = Storage::disk(self::IMAGE_DISK)->path($path);
+        $imagick = new Imagick($imagePath);
+
+        if ($imagick->getNumberImages() > 1) {
+            $imagick = $imagick->coalesceImages();
+
+            foreach ($imagick as $frame) {
+                $frame->resizeImage(1000, 1000, Imagick::FILTER_LANCZOS, 1, true);
+                $frame->stripImage();
+                $frame->setImageCompressionQuality(80);
+            }
+
+            $imagick = $imagick->deconstructImages();
+            $imagick->writeImages($imagePath, true);
+        } else {
+            $imagick->resizeImage(1000, 1000, Imagick::FILTER_LANCZOS, 1, true);
+            $imagick->stripImage();
+            $imagick->setImageCompressionQuality(80);
+            $imagick->writeImage($imagePath);
+        }
+
+        $imagick->clear();
+        $imagick->destroy();
+    }
+
+    /**
+     * Handle the image deletes.
+     */
+    private function deleteImage(string $path): void
+    {
+        if (! str_starts_with($path, 'images/')) {
+            return;
+        }
+
+        Storage::disk(self::IMAGE_DISK)->delete($path);
+        $this->cleanSession($path);
     }
 
     /**
      * Handle the image uploads.
      */
-    public function uploadImages(): void
+    private function uploadImages(): void
     {
         collect($this->images)->each(function (UploadedFile $image): void {
             $today = now()->format('Y-m-d');
 
             /** @var string $path */
-            $path = $image->store("images/{$today}", 'public');
+            $path = $image->store("images/{$today}", self::IMAGE_DISK);
             $this->optimizeImage($path);
 
             if ($path) {
@@ -285,58 +408,11 @@ final class Create extends Component
     }
 
     /**
-     * Optimize the images.
-     */
-    public function optimizeImage(string $path): void
-    {
-        $imagePath = Storage::disk('public')->path($path);
-        $imagick = new Imagick($imagePath);
-
-        $imagick->resizeImage(1000, 1000, Imagick::FILTER_LANCZOS, 1, true);
-
-        $imagick->stripImage();
-
-        $imagick->setImageCompressionQuality(80);
-        $imagick->writeImage($imagePath);
-
-        $imagick->clear();
-        $imagick->destroy();
-    }
-
-    /**
-     * Handle the image deletes.
-     */
-    public function deleteImage(string $path): void
-    {
-        Storage::disk('public')->delete($path);
-        $this->cleanSession($path);
-    }
-
-    /**
-     * Render the component.
-     */
-    public function render(): View
-    {
-        $user = new User;
-
-        if (filled($this->toId)) {
-            $user = $user->findOrFail($this->toId);
-        }
-
-        return view('livewire.questions.create', [
-            'user' => $user,
-        ]);
-    }
-
-    /**
      * Clean the session of the given image path.
      */
     private function cleanSession(string $path): void
     {
-        /** @var array<int, string> $images */
-        $images = session()->get('images', []);
-
-        $remainingImages = collect($images)
+        $remainingImages = collect($this->getSessionImages())
             ->reject(fn (string $imagePath): bool => $imagePath === $path);
 
         session()->put('images', $remainingImages->toArray());
@@ -347,13 +423,23 @@ final class Create extends Component
      */
     private function deleteUnusedImages(): void
     {
-        /** @var array<int, string> $images */
-        $images = session()->get('images', []);
-
-        collect($images)
+        collect($this->getSessionImages())
             ->reject(fn (string $path): bool => str_contains($this->content, $path))
             ->each(fn (string $path): ?bool => $this->deleteImage($path));
 
         session()->forget('images');
+    }
+
+    /**
+     * Get the session images.
+     *
+     * @return array<int, string>
+     */
+    private function getSessionImages(): array
+    {
+        /** @var array<int, string> $images */
+        $images = session()->get('images', []);
+
+        return $images;
     }
 }

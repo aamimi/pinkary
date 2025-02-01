@@ -4,13 +4,13 @@ declare(strict_types=1);
 
 namespace App\Livewire\Questions;
 
-use App\Jobs\IncrementViews;
 use App\Livewire\Concerns\HasLoadMore;
 use App\Models\Question;
 use App\Models\User;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\View\View;
 use Livewire\Attributes\Locked;
 use Livewire\Attributes\On;
@@ -27,34 +27,45 @@ final class Index extends Component
     public int $userId;
 
     /**
-     * Whether the pinned label should be displayed or not.
-     */
-    #[Locked]
-    public bool $pinnable = false;
-
-    /**
      * Render the component.
      */
     public function render(Request $request): View
     {
         $user = User::findOrFail($this->userId);
 
-        $questions = $user
-            ->questionsReceived()
+        $pinnedQuestion = $user->questionsReceived()
             ->where('is_ignored', false)
             ->where('is_reported', false)
+            ->where('pinned', true)
+            ->first();
+
+        $questions = $user
+            ->questionsReceived()
+            ->select('id', 'root_id', 'parent_id')
+            ->withExists([
+                'root as showRoot' => function (Builder $query) use ($user): void {
+                    $query->where('to_id', $user->id);
+                },
+                'parent as showParent' => function (Builder $query) use ($user): void {
+                    $query->where('to_id', $user->id);
+                },
+            ])
+            ->with('parent:id,parent_id')
+            ->where('pinned', false)
+            ->where('is_reported', false)
+            ->where('is_ignored', false)
             ->when($user->isNot($request->user()), function (Builder|HasMany $query): void {
                 $query->whereNotNull('answer');
             })
-            ->orderByDesc('pinned')
-            ->orderByDesc('updated_at')
+            ->havingRaw('parent_id IS NULL or showRoot = 1 or showParent = 1')
+            ->groupBy(DB::Raw('IFNULL(root_id, id)'))
+            ->orderByDesc(DB::raw('MAX(`updated_at`)'))
             ->simplePaginate($this->perPage);
-
-        IncrementViews::dispatchUsingSession($questions->getCollection());
 
         return view('livewire.questions.index', [
             'user' => $user,
             'questions' => $questions,
+            'pinnedQuestion' => $pinnedQuestion,
         ]);
     }
 

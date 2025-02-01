@@ -27,7 +27,7 @@ final class Bookmark extends Model
     /**
      * The question that the bookmark belongs to.
      *
-     * @return BelongsTo<Question, Bookmark>
+     * @return BelongsTo<Question, covariant $this>
      */
     public function question(): BelongsTo
     {
@@ -37,23 +37,10 @@ final class Bookmark extends Model
     /**
      * The user that the bookmark belongs to.
      *
-     * @return BelongsTo<User, Bookmark>
+     * @return BelongsTo<User, covariant $this>
      */
     public function user(): BelongsTo
     {
         return $this->belongsTo(User::class);
-    }
-
-    /**
-     * The attributes that should be cast.
-     *
-     * @return array<string, string>
-     */
-    public function casts(): array
-    {
-        return [
-            'created_at' => 'datetime',
-            'updated_at' => 'datetime',
-        ];
     }
 }

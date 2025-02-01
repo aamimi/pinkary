@@ -16,12 +16,12 @@ final readonly class CodeProviderParsable implements ParsableContentProvider
     public function parse(string $content): string
     {
         return (string) preg_replace_callback(
-            '/```(?<language>[a-z]+)?\n(?<code>.*?)\n```/s',
+            '/```(?<language>[a-z]+)?\s*\n(?<code>.*?)\n```/s',
             function (array $matches): string {
                 $code = $matches['code'];
                 $language = empty($matches['language'])
                     ? 'plaintext'
-                    : $matches['language'];
+                    : trim($matches['language']);
 
                 $highlighter = new Highlighter();
 
@@ -33,8 +33,8 @@ final readonly class CodeProviderParsable implements ParsableContentProvider
                     $highlighted = $highlighter->highlight('plaintext', $code);
                 } // @codeCoverageIgnoreEnd
 
-                $highlightedCode = $highlighted->value;
-                $highlightedLanguage = $highlighted->language;
+                $highlightedCode = type($highlighted->value)->asString();
+                $highlightedLanguage = type($highlighted->language)->asString();
 
                 return '<pre><code class="p-4 rounded-lg hljs '.$highlightedLanguage.' text-xs" style="background-color: #23262E">'.$highlightedCode.'</code></pre>';
             },
